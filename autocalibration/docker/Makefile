@@ -11,7 +11,7 @@
 
 # Image and version configuration
 IMAGE=scenescape-camcalibration
-VERSION:=$(shell cat ../version.txt)
+VERSION:=$(shell cat ../version.txt | tr -d '[:space:]')
 
 # Directory paths
 BUILD_DIR=build
@@ -38,26 +38,32 @@ all: build runtime
 # Build stage
 .PHONY: build
 build: $(BUILD_DEPS)
+	@echo "Building with version: '$(VERSION)'"
 	env BUILDKIT_PROGRESS=plain \
 	docker build \
+		--build-arg VERSION="$(VERSION)" \
 		--build-arg http_proxy=$(http_proxy) \
 		--build-arg https_proxy=$(https_proxy) \
 		--build-arg no_proxy=$(no_proxy) \
 		--build-arg USER_ID=$$UID \
-		-f $(BUILD_DIR)/Dockerfile.build \
-		-t $(IMAGE)-builder:$(VERSION) .
+		-f build/Dockerfile.build \
+		-t $(IMAGE)-builder:$(VERSION) \
+		../../
 
 # Runtime stage
 .PHONY: runtime
 runtime: build $(RUNTIME_DEPS)
+	@echo "Building runtime with version: $(VERSION)"
 	env BUILDKIT_PROGRESS=plain \
 	docker build \
 		--build-arg http_proxy=$(http_proxy) \
 		--build-arg https_proxy=$(https_proxy) \
 		--build-arg no_proxy=$(no_proxy) \
 		--build-arg USER_ID=$$UID \
-		-f $(RUNTIME_DIR)/Dockerfile.runtime \
-		-t $(IMAGE):$(VERSION) .
+		--build-arg VERSION=$(VERSION) \
+		-f runtime/Dockerfile.runtime \
+		-t $(IMAGE):$(VERSION) \
+		../../
 	docker tag $(IMAGE):$(VERSION) $(IMAGE):latest
 
 # Clean build artifacts

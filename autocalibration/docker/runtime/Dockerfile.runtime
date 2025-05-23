@@ -9,6 +9,8 @@
 # This software and the related documents are provided as is, with no express
 # or implied warranties, other than those that are expressly stated in the License.
 
+ARG VERSION=1.3.0
+FROM scenescape-camcalibration-builder:${VERSION} AS builder
 FROM ubuntu:22.04
 
 # Set environment variables
@@ -18,9 +20,9 @@ ENV WSUSER=scenescape
 ENV SCENESCAPE_HOME=/home/$WSUSER/SceneScape
 
 # Copy runtime requirements and scripts
-COPY requirements-runtime.txt /tmp/
-COPY install-netvlad-weights.sh /tmp/
-COPY camcalibration-init /usr/local/bin/
+COPY autocalibration/docker/runtime/requirements-runtime.txt /tmp/
+COPY autocalibration/docker/runtime/install-netvlad-weights.sh /tmp/
+COPY autocalibration/docker/runtime/camcalibration-init /usr/local/bin/
 
 # Create non-root user
 RUN useradd -r -m -s /bin/bash $WSUSER && \

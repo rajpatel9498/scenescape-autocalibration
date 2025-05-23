@@ -9,23 +9,34 @@
 # This software and the related documents are provided as is, with no express
 # or implied warranties, other than those that are expressly stated in the License.
 
+# Define build arguments
+ARG VERSION
 FROM ubuntu:22.04 AS builder
+
+# Redefine ARG after FROM to make it available in this stage
+ARG VERSION
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
+ENV VERSION=${VERSION}
+
+# Print version for verification
+RUN echo "Building with version: ${VERSION}"
 
 # Copy build requirements and scripts
-COPY requirements-build.txt /tmp/
-COPY install-apriltag.sh /tmp/
+COPY autocalibration/docker/build/requirements-build.txt /tmp/
+COPY autocalibration/docker/install-apriltag.sh /tmp/
 
 # Install build dependencies
 RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt \
     apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    cmake \
     curl \
     g++ \
+    git \
     libboost-python-dev \
     libeigen3-dev \
     libgtest-dev \
@@ -34,6 +45,8 @@ RUN --mount=type=cache,target=/var/cache/apt \
     python3-dev \
     python3-pip \
     python3-scipy \
+    libopencv-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Install AprilTag
@@ -46,8 +59,11 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     --extra-index-url https://download.pytorch.org/whl/cpu \
     -r /tmp/requirements-build.txt
 
+# Copy scene_common first
+COPY scene_common /build/scene_common/
+
 # Copy source code
-COPY . /build
+COPY autocalibration /build/autocalibration/
 WORKDIR /build
 
 # Build scene_common
@@ -56,9 +72,10 @@ RUN cd scene_common && \
     make -C fast_geometry -j $(nproc) all install
 
 # Build and package components
+WORKDIR /build/autocalibration
 RUN python3 setup.py bdist_wheel
 
 # Create a clean distribution directory
 RUN mkdir -p /dist && \
     cp dist/*.whl /dist/ && \
-    cp -r scene_common/fast_geometry /dist/ 
+    cp -r ../scene_common/fast_geometry /dist/ 

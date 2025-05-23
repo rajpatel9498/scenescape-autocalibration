@@ -11,23 +11,36 @@
 # This software and the related documents are provided as is, with no express
 # or implied warranties, other than those that are expressly stated in the License.
 
+set -e  # Exit on any error
+
 WORKDIR=/tmp/apriltag
 
-mkdir ${WORKDIR}
+mkdir -p ${WORKDIR}
 cd ${WORKDIR}
 
+# Clone and build AprilTag
 git clone https://github.com/duckietown/lib-dt-apriltags.git apriltag-dev
 cd apriltag-dev
 git submodule init
 git submodule update
-mkdir build
+
+# Build and install AprilTag
+cd apriltags
+mkdir -p build
 cd build
-cmake ../apriltags/
-make -j 4
-cd ../
+cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release ..
+make -j $(nproc)
+make install
+
+# Verify installation
+echo "Verifying AprilTag installation..."
+ls -l /usr/local/lib/libapriltag*
+ls -l /usr/local/include/apriltag/
+
+# Install Python package
+cd ../../
 pip install .
 
-cp build/*so /usr/local/lib/python3.10/dist-packages/dt_apriltags/
-
+# Cleanup
 cd
 rm -rf ${WORKDIR}
