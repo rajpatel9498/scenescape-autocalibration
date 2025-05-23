@@ -1,0 +1,71 @@
+# Copyright (C) 2024-2025 Intel Corporation
+#
+# This software and the related documents are Intel copyrighted materials,
+# and your use of them is governed by the express license under which they
+# were provided to you ("License"). Unless the License provides otherwise,
+# you may not use, modify, copy, publish, distribute, disclose or transmit
+# this software or the related documents without Intel's prior written permission.
+#
+# This software and the related documents are provided as is, with no express
+# or implied warranties, other than those that are expressly stated in the License.
+
+FROM ubuntu:22.04
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV WSUSER=scenescape
+ENV SCENESCAPE_HOME=/home/$WSUSER/SceneScape
+
+# Copy runtime requirements and scripts
+COPY requirements-runtime.txt /tmp/
+COPY install-netvlad-weights.sh /tmp/
+COPY camcalibration-init /usr/local/bin/
+
+# Create non-root user
+RUN useradd -r -m -s /bin/bash $WSUSER && \
+    usermod -a -G video,users $WSUSER && \
+    chmod a+rX /home/$WSUSER
+
+# Install runtime dependencies
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt \
+    apt-get update && apt-get install -y --no-install-recommends \
+    bindfs \
+    libboost-python-dev \
+    libegl1 \
+    libgl1 \
+    libglib2.0-0 \
+    libgomp1 \
+    python-is-python3 \
+    python3-pip \
+    python3-scipy \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy built artifacts from builder
+COPY --from=builder /dist/*.whl /tmp/
+COPY --from=builder /usr/local/lib/libapriltag* /usr/local/lib/
+COPY --from=builder /usr/local/include/apriltag /usr/local/include/apriltag
+COPY --from=builder /dist/fast_geometry /usr/local/lib/python3/dist-packages/fast_geometry
+
+# Install Python runtime dependencies
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install --upgrade --no-cache-dir \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    -r /tmp/requirements-runtime.txt && \
+    pip3 install --no-cache-dir /tmp/*.whl && \
+    rm -rf /tmp/*.whl
+
+# Install NetVLAD weights
+RUN /tmp/install-netvlad-weights.sh && \
+    rm /tmp/install-netvlad-weights.sh
+
+# Set up application directory
+RUN mkdir -p $SCENESCAPE_HOME && \
+    chown -R $WSUSER:$WSUSER $SCENESCAPE_HOME
+
+# Switch to non-root user
+USER $WSUSER
+WORKDIR $SCENESCAPE_HOME
+
+ENTRYPOINT ["/usr/local/bin/camcalibration-init"] 

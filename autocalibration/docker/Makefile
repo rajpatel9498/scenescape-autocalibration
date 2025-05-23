@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2024-2025 Intel Corporation
 #
 # This software and the related documents are Intel copyrighted materials,
 # and your use of them is governed by the express license under which they
@@ -9,28 +9,83 @@
 # This software and the related documents are provided as is, with no express
 # or implied warranties, other than those that are expressly stated in the License.
 
+# Image and version configuration
 IMAGE=scenescape-camcalibration
 VERSION:=$(shell cat ../version.txt)
 
--include Makefile.camcalibfiles
+# Directory paths
+BUILD_DIR=build
+RUNTIME_DIR=runtime
 
-default: Makefile.camcalibfiles Dockerfile camcalibration.tar scene_common.tar
+# Build dependencies
+BUILD_DEPS := $(BUILD_DIR)/Dockerfile.build \
+              $(BUILD_DIR)/requirements-build.txt \
+              $(BUILD_DIR)/install-apriltag.sh
+
+# Runtime dependencies
+RUNTIME_DEPS := $(RUNTIME_DIR)/Dockerfile.runtime \
+                $(RUNTIME_DIR)/requirements-runtime.txt \
+                $(RUNTIME_DIR)/install-netvlad-weights.sh \
+                $(RUNTIME_DIR)/camcalibration-init
+
+# OSPDT tracking
+OSPDT_DEPS := $(shell cat $(BUILD_DIR)/requirements-build.txt $(RUNTIME_DIR)/requirements-runtime.txt | grep -v '^#' | sort -u)
+
+# Default target
+.PHONY: all
+all: build runtime
+
+# Build stage
+.PHONY: build
+build: $(BUILD_DEPS)
 	env BUILDKIT_PROGRESS=plain \
-	  docker build $(REBUILDFLAGS) \
-	    --build-arg http_proxy=$(http_proxy) \
-	    --build-arg https_proxy=$(https_proxy) \
-	    --build-arg no_proxy=$(no_proxy) \
-	    --build-arg CERTDOMAIN=$(CERTDOMAIN) \
-	    --build-arg USER_ID=$$UID \
-	    --rm -t $(IMAGE):$(VERSION) . \
-	&& docker tag $(IMAGE):$(VERSION) $(IMAGE):latest
+	docker build \
+		--build-arg http_proxy=$(http_proxy) \
+		--build-arg https_proxy=$(https_proxy) \
+		--build-arg no_proxy=$(no_proxy) \
+		--build-arg USER_ID=$$UID \
+		-f $(BUILD_DIR)/Dockerfile.build \
+		-t $(IMAGE)-builder:$(VERSION) .
 
-FPCAMCALIB=$(addprefix ../,$(CAMCALIBFILES))
-camcalibration.tar: Makefile.camcalibfiles $(FPCAMCALIB)
-	tar -cf $@ -C .. $(CAMCALIBFILES)
+# Runtime stage
+.PHONY: runtime
+runtime: build $(RUNTIME_DEPS)
+	env BUILDKIT_PROGRESS=plain \
+	docker build \
+		--build-arg http_proxy=$(http_proxy) \
+		--build-arg https_proxy=$(https_proxy) \
+		--build-arg no_proxy=$(no_proxy) \
+		--build-arg USER_ID=$$UID \
+		-f $(RUNTIME_DIR)/Dockerfile.runtime \
+		-t $(IMAGE):$(VERSION) .
+	docker tag $(IMAGE):$(VERSION) $(IMAGE):latest
 
-scene_common.tar:
-	tar -chf $@ ../scene_common
+# Clean build artifacts
+.PHONY: clean
+clean:
+	rm -rf $(BUILD_DIR)/*.whl
+	docker rmi $(IMAGE)-builder:$(VERSION) $(IMAGE):$(VERSION) || true
 
-rebuild:
-	make REBUILDFLAGS="--no-cache"
+# Force rebuild without cache
+.PHONY: rebuild
+rebuild: clean all
+
+# Generate OSPDT report
+.PHONY: ospdt-report
+ospdt-report:
+	@echo "Open Source and Third Party Dependencies:"
+	@for dep in $(OSPDT_DEPS); do \
+		echo "$$dep"; \
+	done
+
+# Help target
+.PHONY: help
+help:
+	@echo "Available targets:"
+	@echo "  all            - Build both build and runtime stages (default)"
+	@echo "  build          - Build only the build stage"
+	@echo "  runtime        - Build the runtime stage (requires build stage)"
+	@echo "  clean          - Remove build artifacts and images"
+	@echo "  rebuild        - Clean and rebuild everything"
+	@echo "  ospdt-report   - Generate OSPDT dependency report"
+	@echo "  help           - Show this help message"
